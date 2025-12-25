@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Pitch Black Lua Editor</title>
+<style>
+html, body { margin:0; height:100%; background:#000; font-family:sans-serif; color:#fff; }
+body { display:flex; flex-direction:column; }
+#toolbar {
+  height:40px; background:#111; display:flex; align-items:center; padding:0 10px; border-bottom:1px solid #222;
+}
+#toolbar button {
+  margin-right:10px; padding:5px 10px; background:#222; border:none; color:#fff; cursor:pointer; border-radius:4px; transition:0.2s;
+}
+#toolbar button:hover { background:#333; }
+#tabs {
+  display:flex; background:#111; overflow-x:auto; border-bottom:1px solid #222;
+}
+.tab {
+  padding:5px 10px; cursor:pointer; color:#fff; border-right:1px solid #222; display:flex; align-items:center; user-select:none;
+}
+.tab.active { background:#222; }
+.tab span.close { margin-left:5px; cursor:pointer; color:#f55; font-weight:bold; }
+#editor { flex:1; width:100%; }
+
+/* Modals */
+.modalOverlay {
+  position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85);
+  display:none; justify-content:center; align-items:center; z-index:9999;
+}
+.modalContent {
+  background:#111; padding:20px; border-radius:8px; text-align:center; width:300px; color:#fff;
+}
+.modalContent input { width:80%; padding:5px; margin-top:10px; background:#222; border:none; color:#fff; border-radius:4px; }
+.modalContent button {
+  margin:10px 5px 0 5px; padding:5px 10px; background:#222; border:none; color:#fff; cursor:pointer; border-radius:4px;
+}
+.modalContent button:hover { background:#333; }
+</style>
+<script src="https://unpkg.com/monaco-editor@0.45.0/min/vs/loader.js"></script>
+<script>
+let editors=[], tabs=[], current=0, pendingCloseIndex=null, pendingRenameIndex=null;
+
+// Theme
+function definePitchBlackTheme() {
+  monaco.editor.defineTheme('pitch-black',{
+    base:'vs-dark',
+    inherit:true,
+    rules:[],
+    colors:{
+      'editor.background':'#000000',
+      'editor.foreground':'#ffffff',
+      'editorCursor.foreground':'#ffffff',
+      'editorLineNumber.foreground':'#888888',
+      'editor.selectionBackground':'#333333',
+      'editor.inactiveSelectionBackground':'#222222',
+      'editorLineNumber.activeForeground':'#fff'
+    }
+  });
+}
+
+// Save/load
+function saveData(){
+  const data=editors.map((ed,i)=>({name:tabs[i].dataset.name,content:ed.getValue()}));
+  localStorage.setItem("luaEditorData",JSON.stringify(data));
+}
+function loadData(){
+  const saved=JSON.parse(localStorage.getItem("luaEditorData")||"[]");
+  if(saved.length){saved.forEach(f=>addFile(f.name,f.content));}
+  else{addFile("main.lua",'--SyntX 1.05\nprint("hello world")');}
+}
+
+// Add file
+function addFile(name="new.lua", content=null){
+  if(content===null) content="--SyntX 1.05\n";
+  const tabContainer=document.getElementById("tabs");
+  const tab=document.createElement("div");
+  tab.className="tab"; tab.dataset.name=name; tab.innerText=name;
+
+  const closeBtn=document.createElement("span");
+  closeBtn.className="close"; closeBtn.innerText="×";
+  closeBtn.onclick=(e)=>{e.stopPropagation(); promptClose(editors.indexOf(editor));};
+  tab.appendChild(closeBtn);
+
+  tab.onclick=()=>switchTab(editors.indexOf(editor));
+  tabContainer.appendChild(tab);
+
+  const editorContainer=document.createElement("div");
+  editorContainer.style.width="100%"; editorContainer.style.height="100%"; editorContainer.style.display="none";
+  document.getElementById("editor").appendChild(editorContainer);
+
+  const editor=monaco.editor.create(editorContainer,{
+    value:content,
+    language:'lua',
+    theme:'pitch-black',
+    automaticLayout:true
+  });
+  editor.onDidChangeModelContent(saveData);
+
+  editors.push(editor); tabs.push(tab);
+  switchTab(editors.length-1);
+  saveData();
+}
+
+// Switch tab
+function switchTab(index){
+  editors.forEach((ed,i)=>{
+    ed.getDomNode().parentElement.style.display=i===index?"block":"none";
+    tabs[i].classList.toggle("active",i===index);
+  });
+  current=index;
+}
+
+// Custom close modal
+function promptClose(index){
+  if(editors.length<=1) return;
+  pendingCloseIndex=index;
+  document.getElementById("closeModal").style.display="flex";
+}
+function confirmClose(){
+  const index=pendingCloseIndex;
+  if(index===null) return;
+  const ed=editors[index]; const tab=tabs[index];
+  ed.dispose(); tab.remove();
+  editors.splice(index,1); tabs.splice(index,1);
+  switchTab(Math.max(0,index-1));
+  saveData();
+  pendingCloseIndex=null;
+  document.getElementById("closeModal").style.display="none";
+}
+function cancelClose(){
+  pendingCloseIndex=null;
+  document.getElementById("closeModal").style.display="none";
+}
+
+// Custom rename modal
+function promptRename(index){
+  pendingRenameIndex=index;
+  const input=document.getElementById("renameInput");
+  input.value=tabs[index].dataset.name;
+  document.getElementById("renameModal").style.display="flex";
+  input.focus();
+}
+function confirmRename(){
+  const index=pendingRenameIndex;
+  if(index===null) return;
+  const newName=document.getElementById("renameInput").value.trim();
+  if(newName){
+    tabs[index].dataset.name=newName;
+    tabs[index].childNodes[0].nodeValue=newName;
+    saveData();
+  }
+  pendingRenameIndex=null;
+  document.getElementById("renameModal").style.display="none";
+}
+function cancelRename(){
+  pendingRenameIndex=null;
+  document.getElementById("renameModal").style.display="none";
+}
+
+// Rename current file
+function renameCurrent(){
+  promptRename(current);
+}
+
+// Confirm leaving
+window.onbeforeunload=function(){ return "You have unsaved changes. Are you sure you want to leave?"; };
+
+require.config({paths:{ vs:'https://unpkg.com/monaco-editor@0.45.0/min/vs' }});
+require(['vs/editor/editor.main'],()=>{ definePitchBlackTheme(); loadData(); });
+</script>
+</head>
+<body>
+  <div id="toolbar">
+    <button onclick="addFile()">New File</button>
+    <button onclick="renameCurrent()">Rename File</button>
+  </div>
+  <div id="tabs"></div>
+  <div id="editor"></div>
+
+  <!-- Close Modal -->
+  <div id="closeModal" class="modalOverlay">
+    <div class="modalContent">
+      <div>Are you sure you want to close this file?</div>
+      <button onclick="confirmClose()">Yes</button>
+      <button onclick="cancelClose()">No</button>
+    </div>
+  </div>
+
+  <!-- Rename Modal -->
+  <div id="renameModal" class="modalOverlay">
+    <div class="modalContent">
+      <div>Enter new file name:</div>
+      <input id="renameInput" type="text"/>
+      <div>
+        <button onclick="confirmRename()">OK</button>
+        <button onclick="cancelRename()">Cancel</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
