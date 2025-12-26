@@ -2,229 +2,53 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Pitch Black Lua Editor</title>
+<title>SyntX 1.05</title>
+
 <style>
 html, body {
-  margin:0; padding:0; width:100%; height:100%;
-  background:#000; color:#fff; font-family:sans-serif; overflow:hidden;
-  display:flex;
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: #000;
+    overflow: hidden;
 }
-#sidebar {
-  width:250px; background:#111; border-right:1px solid #222;
-  display:flex; flex-direction:column; transition:width 0.3s;
-  justify-content:flex-start;
-  align-items:flex-start;
+#editor {
+    width: 100%;
+    height: 100%;
 }
-#sidebar .hamburger {
-  padding:10px; cursor:pointer; font-size:20px; text-align:center; border-bottom:1px solid #222;
-  flex-shrink:0;
-}
-#fileList {
-  flex:1;
-  overflow-y:auto;
-  width:100%;
-  display:flex;
-  flex-direction: column;
-  transition: opacity 0.3s;
-}
-.fileItem {
-  padding:8px 10px; cursor:pointer; display:flex; justify-content:space-between; align-items:center;
-}
-.fileItem.active { background:#222; }
-.fileItem .close { color:#f55; cursor:pointer; }
-#fileActions {
-  padding:10px;
-  display:flex; flex-direction: column;
-  width:100%;
-  transition: opacity 0.3s;
-}
-#fileActions button {
-  margin-bottom:5px; padding:5px 10px; background:#222; border:none; color:#fff; border-radius:4px; cursor:pointer;
-}
-#fileActions button:hover { background:#333; }
-#editor { flex:1; height:100%; }
-.modalOverlay {
-  position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.85);
-  display:none; justify-content:center; align-items:center; z-index:9999;
-}
-.modalContent {
-  background:#111; padding:20px; border-radius:8px; text-align:center; width:300px;
-}
-.modalContent input {
-  width:80%; padding:5px; margin-top:10px; background:#222; border:none; color:#fff; border-radius:4px;
-}
-.modalContent button {
-  margin:10px 5px 0 5px; padding:5px 10px; background:#222; border:none; color:#fff; cursor:pointer; border-radius:4px;
-}
-.modalContent button:hover { background:#333; }
 </style>
-<script src="https://unpkg.com/monaco-editor@0.45.0/min/vs/loader.js"></script>
+
+<script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs/loader.js"></script>
 <script>
-(() => {
-  let files=[], current=0, pending=null, sidebarExpanded=true;
-  const SIDEBAR_WIDTH = 250;
-  const SIDEBAR_COLLAPSED = 50;
+require.config({ paths: { vs: 'https://cdn.jsdelivr.net/npm/monaco-editor@0.45.0/min/vs' } });
 
-  function defineTheme() {
-    monaco.editor.defineTheme('pitch-black',{
-      base:'vs-dark', inherit:true, rules:[],
-      colors:{
-        'editor.background':'#000000',
-        'editor.foreground':'#ffffff',
-        'editorCursor.foreground':'#ffffff',
-        'editorLineNumber.foreground':'#888888',
-        'editor.selectionBackground':'#333333',
-        'editor.inactiveSelectionBackground':'#222222',
-        'editorLineNumber.activeForeground':'#fff'
-      }
+require(["vs/editor/editor.main"], function () {
+    monaco.editor.defineTheme("pitchBlack", {
+        base: "vs-dark",
+        inherit: true,
+        rules: [],
+        colors: {
+            "editor.background": "#000000"
+        }
     });
-  }
 
-  function save() {
-    localStorage.setItem("luaEditorData", JSON.stringify(files.map(f=>({name:f.name, content:f.editor.getValue()}))));
-  }
-
-  function load() {
-    const saved = JSON.parse(localStorage.getItem("luaEditorData")||"[]");
-    if(saved.length) saved.forEach(f=>addFile(f.name,f.content));
-    else addFile("main.lua","--SyntX 1.05\nprint('hello world')");
-  }
-
-  function addFile(name="new.lua", content="--SyntX 1.05\n") {
-    const fileList = document.getElementById("fileList");
-    const fileDiv = document.createElement("div");
-    fileDiv.className="fileItem"; fileDiv.textContent=name;
-
-    const closeBtn = document.createElement("span");
-    closeBtn.className="close"; closeBtn.textContent="×";
-    closeBtn.onclick=e=>{ e.stopPropagation(); promptClose(files.indexOf(file)); };
-
-    fileDiv.appendChild(closeBtn);
-    fileList.appendChild(fileDiv);
-
-    const edDiv = document.createElement("div");
-    edDiv.style.width="100%"; edDiv.style.height="100%"; edDiv.style.display="none";
-    document.getElementById("editor").appendChild(edDiv);
-
-    const editor = monaco.editor.create(edDiv, { value: content, language:'lua', theme:'pitch-black', automaticLayout:true });
-    editor.onDidChangeModelContent(save);
-
-    const file = {name, editor, container:edDiv, dom:fileDiv};
-    files.push(file);
-
-    fileDiv.onclick = ()=>switchFile(files.indexOf(file));
-    switchFile(files.length-1);
-    save();
-  }
-
-  function switchFile(index) {
-    files.forEach((f,i)=>{
-      f.container.style.display = i===index?"block":"none";
-      f.dom.classList.toggle("active", i===index);
+    window.editor = monaco.editor.create(document.getElementById("editor"), {
+        value: "--SyntX 1.05\n",
+        language: "lua",
+        theme: "pitchBlack",
+        fontFamily: "Consolas",
+        fontSize: 14,
+        automaticLayout: true
     });
-    current=index;
-  }
 
-  function promptClose(index) { pending={type:"close", index}; document.getElementById("closeModal").style.display="flex"; }
-  function confirmClose() {
-    const {index} = pending;
-    const f = files[index];
-    f.editor.dispose(); f.container.remove(); f.dom.remove();
-    files.splice(index,1); 
-    switchFile(Math.max(0,index-1));
-    pending=null; document.getElementById("closeModal").style.display="none";
-    save();
-  }
-  function cancelClose() { pending=null; document.getElementById("closeModal").style.display="none"; }
-
-  function promptRename(index) {
-    pending={type:"rename", index};
-    const input = document.getElementById("renameInput");
-    input.value = files[index].name;
-    document.getElementById("renameModal").style.display="flex";
-    input.focus();
-  }
-  function confirmRename() {
-    const newName = document.getElementById("renameInput").value.trim();
-    if(newName) {
-      files[pending.index].name=newName;
-      files[pending.index].dom.childNodes[0].nodeValue=newName;
-      save();
-    }
-    pending=null; document.getElementById("renameModal").style.display="none";
-  }
-  function cancelRename() { pending=null; document.getElementById("renameModal").style.display="none"; }
-
-  function toggleSidebar() {
-    const sb = document.getElementById("sidebar");
-    const fileList = document.getElementById("fileList");
-    const fileActions = document.getElementById("fileActions");
-
-    sidebarExpanded = !sidebarExpanded;
-
-    if(sidebarExpanded){
-      sb.style.width = SIDEBAR_WIDTH + "px";
-      fileList.style.opacity = "1";
-      fileList.style.pointerEvents = "auto";
-      fileActions.style.opacity = "1";
-      fileActions.style.pointerEvents = "auto";
-      sb.style.alignItems = "flex-start";
-    } else {
-      sb.style.width = SIDEBAR_COLLAPSED + "px";
-      fileList.style.opacity = "0";
-      fileList.style.pointerEvents = "none";
-      fileActions.style.opacity = "0";
-      fileActions.style.pointerEvents = "none";
-      sb.style.alignItems = "center";
-    }
-  }
-
-  window.renameCurrent = ()=>promptRename(current);
-  window.addNewFile = ()=>addFile();
-
-  window.onbeforeunload = ()=> "Unsaved changes?";
-
-  require.config({paths:{vs:'https://unpkg.com/monaco-editor@0.45.0/min/vs'}});
-  require(['vs/editor/editor.main'], ()=>{
-    defineTheme(); load();
-  });
-
-  window.confirmClose=confirmClose;
-  window.cancelClose=cancelClose;
-  window.confirmRename=confirmRename;
-  window.cancelRename=cancelRename;
-  window.toggleSidebar=toggleSidebar;
-})();
+    window.getCode = function () {
+        return monaco.editor.getModels()[0].getValue();
+    };
+});
 </script>
 </head>
+
 <body>
-  <div id="sidebar">
-    <div class="hamburger" onclick="toggleSidebar()">☰</div>
-    <div id="fileList"></div>
-    <div id="fileActions">
-      <button onclick="addNewFile()">New File</button>
-      <button onclick="renameCurrent()">Rename</button>
-    </div>
-  </div>
-  <div id="editor"></div>
-
-  <div id="closeModal" class="modalOverlay">
-    <div class="modalContent">
-      <div>Are you sure you want to close this file?</div>
-      <button onclick="confirmClose()">Yes</button>
-      <button onclick="cancelClose()">No</button>
-    </div>
-  </div>
-
-  <div id="renameModal" class="modalOverlay">
-    <div class="modalContent">
-      <div>Enter new file name:</div>
-      <input id="renameInput" type="text"/>
-      <div>
-        <button onclick="confirmRename()">OK</button>
-        <button onclick="cancelRename()">Cancel</button>
-      </div>
-    </div>
-  </div>
+<div id="editor"></div>
 </body>
-</html>
+</html><!-- Styles for full-screen black editor -->
